@@ -46,42 +46,48 @@ async def push(s, delay):
     Push an event to a VEN with a given delay.
     '''
     await asyncio.sleep(delay)
-    id = await s.push_event(
-        ven_id='ven_id_123',
-        priority=1,
-        signal_name='LOAD_DISPATCH',
-        signal_type='delta',
-        measurement_name='REAL_POWER',
-        scale='k',
-        intervals=[{'dtstart': datetime.now(tz=timezone.utc) + timedelta(minutes=5),
-                    'duration': timedelta(minutes=10),
-                    'signal_payload': 3.1}],
-        market_context='oadr://my_market',
-        callback=event_response_callback
+    try:
+        id = await s.push_event(
+            ven_id='ven_id_123',
+            priority=1,
+            signal_name='LOAD_DISPATCH',
+            signal_type='delta',
+            measurement_name='REAL_POWER',
+            scale='k',
+            intervals=[{
+                'dtstart': datetime.now(tz=timezone.utc) + timedelta(minutes=5),
+                'duration': timedelta(minutes=10),
+                'signal_payload': 3.1
+            }],
+            market_context='oadr://my_market',
+            callback=event_response_callback
         )
+        if id:
+            print(f'Successfully pushed event with ID={id}')
+        else:
+            print('Failed to push event')
+    except Exception as e:
+        print(f'Error while pushing event: {e}')
 
-    if id != None:
-        print(f'Successfully pushed event with ID={id}')
-    else:
-        print('Failed to push event')
-
-# Create the server object
-simple_server = OpenADRServerPushMode(vtn_id='myvtn')
-
-# Add the handler for client (VEN) registrations
-simple_server.add_handler('on_create_party_registration', on_create_party_registration)
-
-# Add the handler for report registrations from the VEN
-simple_server.add_handler('on_register_report', on_register_report)
 
 # Run the server on the asyncio event loop
-loop = asyncio.get_event_loop()
-loop.create_task(simple_server.run())
+if __name__ == '__main__':
+    # Create the server object
+    simple_server = OpenADRServerPushMode(vtn_id='myvtn')
 
-# Push an event later.
-loop.create_task(push(simple_server, 5))
+    # Add the handler for client (VEN) registrations
+    simple_server.add_handler('on_create_party_registration', on_create_party_registration)
 
-try:
-    loop.run_forever()
-except KeyboardInterrupt:
-    loop.run_until_complete(simple_server.stop())
+    # Add the handler for report registrations from the VEN
+    simple_server.add_handler('on_register_report', on_register_report)
+
+
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(simple_server.run())
+        loop.create_task(push(simple_server, 5))
+        loop.run_forever()
+        # asyncio.run(simple_server.run())
+    except KeyboardInterrupt:
+        print("Shutting down server...")
+        asyncio.run(simple_server.stop())
