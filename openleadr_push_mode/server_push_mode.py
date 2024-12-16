@@ -93,24 +93,44 @@ class OpenADRServerPushMode(OpenADRServer):
         # Add a reference to the openadr VTN to the aiohttp 'app'
         self.app['server'] = self
 
-        headers = {'content-type': 'application/xml'}
+        self.client_session_post = None
+        self._headers = {'content-type': 'application/xml'}
+
+        # Store SSL connector if needed
+        self._connector = None
         if http_cert and http_key and http_ca_file:
             ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             ssl_context.load_verify_locations(http_ca_file)
             ssl_context.load_cert_chain(http_cert, http_key, http_key_passphrase)
-            # ssl_context.check_hostname = check_hostname
-            connector = aiohttp.TCPConnector(ssl=ssl_context)
-            self.client_session_post = aiohttp.ClientSession(connector=connector, headers=headers)
+            self._connector = aiohttp.TCPConnector(ssl=ssl_context)
+            print('http_cert,key and CA file present')
         else:
-            self.client_session_post = aiohttp.ClientSession(headers=headers)
+            print('http_cert,key and CA file not present')
 
         if cert and key:
             with open(cert, 'rb') as file:
                 cert = file.read()
             with open(key, 'rb') as file:
                 key = file.read()
-
         self._create_message = partial(create_message, cert=cert, key=key, passphrase=passphrase)
+
+    async def run(self):
+        # Create the client session BEFORE calling super().run()
+        if self._connector is not None:
+            self.client_session_post = aiohttp.ClientSession(connector=self._connector, headers=self._headers)
+        else:
+            self.client_session_post = aiohttp.ClientSession(headers=self._headers)
+
+        # Now call the parent run method to start the server
+        await super().run()
+
+    async def stop(self):
+        await super().stop()
+        if self.client_session_post:
+            await self.client_session_post.close()
+        await asyncio.sleep(0)
+        logger.info(f'\r{self.vtn_id} stopped.')
+
 
     async def push_report_request(self, ven_id, report_requests):
         '''
@@ -270,7 +290,8 @@ class OpenADRServerPushMode(OpenADRServer):
         Cleanly stops the server. Run this coroutine before closing your event loop.
         '''
         await super().stop()
-        await self.client_session_post.close()
+        if self.client_session_post:
+            await self.client_session_post.close()
         await asyncio.sleep(0)
         logger.info(f'\r{self.vtn_id} stopped.')
 
